@@ -1,0 +1,41 @@
+name: myapplication
+description: A new Flutter project.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  pie_chart: ^5.3.2
+  cupertino_icons: ^1.0.2
+  animate_do: ^2.0.0
+  fl_chart: ^0.68.0
+  shared_preferences: ^2.0.11
+  jwt_decoder: ^2.0.1
+  http: 1.1.0 # ✅ mise à jour ici
+  google_fonts: ^6.1.0
+  flutter_animate: ^4.2.0
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/avatar.jpg
+    - assets/images/logout_icon.jpg
+    - assets/images/profile_icon.jpg
+    - assets/images/pictor_logo.jpg
+    - assets/images/all_tickets_icon.jpeg
+    - assets/images/closed_tickets_icon.jpeg
+    - assets/images/open_tickets_icon.jpeg
+    - assets/images/pending_tickets_icon.jpeg
+    - assets/images/layers_logo.png
+    - assets/images/welcome_illustration.jpg
+
