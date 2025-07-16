@@ -1,22 +1,38 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../login/dashboard_screen.dart';
 import '../login/mestickets.dart';
+import '../../backendApi/client/api-user.dart';
+import '../../backendApi/client/usermodel.dart';
 
 class ProfilPage extends StatefulWidget {
   @override
   _ProfilPageState createState() => _ProfilPageState();
 }
 
-class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateMixin {
-  final TextEditingController _usernameController = TextEditingController(text: 'client');
-  final TextEditingController _emailController = TextEditingController(text: 'syrtnezeddinl097@gmail.com');
-  final TextEditingController _firstNameController = TextEditingController(text: 'Client User');
-  final TextEditingController _phoneController = TextEditingController(text: '1122334455');
+class _ProfilPageState extends State<ProfilPage>
+    with SingleTickerProviderStateMixin {
+  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _firstNameController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+
+  // Password change controllers
+  final TextEditingController _oldPasswordController = TextEditingController();
+  final TextEditingController _newPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
 
   int _selectedIndex = 0;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
+
+  User? _currentUser;
+  bool _isLoading = true;
+  bool _isSaving = false;
+  String? _errorMessage;
+  String? _successMessage;
 
   @override
   void initState() {
@@ -41,6 +57,154 @@ class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateM
     );
 
     _animationController.forward();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      final userInfo = prefs.getString('userInfo');
+
+      if (token != null && userInfo != null) {
+        // Parse user info from stored string
+        final userData = Map<String, dynamic>.fromEntries(userInfo
+            .replaceAll('{', '')
+            .replaceAll('}', '')
+            .split(',')
+            .map((e) {
+          final parts = e.trim().split(':');
+          if (parts.length == 2) {
+            return MapEntry(parts[0].trim(), parts[1].trim());
+          }
+          return MapEntry('', '');
+        }).where((e) => e.key.isNotEmpty));
+
+        final user = User.fromJson(userData);
+
+        setState(() {
+          _currentUser = user;
+          _usernameController.text = user.userName;
+          _emailController.text = user.email;
+          _firstNameController.text = user.nomPrenom;
+          _phoneController.text = user.phoneNumber ?? '';
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'No user data found';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Failed to load user data: $e';
+      });
+    }
+  }
+
+  Future<void> _updateProfile() async {
+    if (_currentUser == null) return;
+
+    try {
+      setState(() {
+        _isSaving = true;
+        _errorMessage = null;
+        _successMessage = null;
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token != null) {
+        final updatedData = {
+          'userId': _currentUser!.userId,
+          'nomPrenom': _firstNameController.text,
+          'phone': _phoneController.text,
+        };
+
+        final updatedUser = await ApiService.updateMyProfile(
+            _currentUser!.userId, updatedData, token);
+
+        setState(() {
+          _currentUser = updatedUser;
+          _successMessage = 'Profile updated successfully!';
+          _isSaving = false;
+        });
+
+        // Update stored user info
+        await prefs.setString('userInfo', updatedUser.toJson().toString());
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to update profile: $e';
+        _isSaving = false;
+      });
+    }
+  }
+
+  Future<void> _changePassword() async {
+    if (_newPasswordController.text != _confirmPasswordController.text) {
+      setState(() {
+        _errorMessage = 'New passwords do not match';
+      });
+      return;
+    }
+
+    try {
+      setState(() {
+        _isSaving = true;
+        _errorMessage = null;
+        _successMessage = null;
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token != null) {
+        // First check if old password is correct
+        final isOldPasswordCorrect = await ApiService.checkPassword({
+          'userId': _currentUser!.userId,
+          'password': _oldPasswordController.text,
+        });
+
+        if (!isOldPasswordCorrect) {
+          setState(() {
+            _errorMessage = 'Current password is incorrect';
+            _isSaving = false;
+          });
+          return;
+        }
+
+        // Update password
+        await ApiService.resetPassword({
+          'email': _currentUser!.email,
+          'code': '123456', // This should be handled properly in a real app
+          'newPassword': _newPasswordController.text,
+        });
+
+        setState(() {
+          _successMessage = 'Password changed successfully!';
+          _isSaving = false;
+        });
+
+        // Clear password fields
+        _oldPasswordController.clear();
+        _newPasswordController.clear();
+        _confirmPasswordController.clear();
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to change password: $e';
+        _isSaving = false;
+      });
+    }
   }
 
   @override
@@ -50,6 +214,9 @@ class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateM
     _emailController.dispose();
     _firstNameController.dispose();
     _phoneController.dispose();
+    _oldPasswordController.dispose();
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -58,22 +225,57 @@ class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateM
     return Scaffold(
       appBar: _buildAppBar(),
       drawer: _buildDrawer(),
-      body: Column(
-        children: [
-          _buildTabSelector(),
-          Expanded(
-            child: AnimatedSwitcher(
-              duration: Duration(milliseconds: 300),
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: SizeTransition(
-                  sizeFactor: animation,
-                  axis: Axis.vertical,
-                  child: child,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+              ? _buildErrorWidget()
+              : Column(
+                  children: [
+                    _buildTabSelector(),
+                    Expanded(
+                      child: AnimatedSwitcher(
+                        duration: Duration(milliseconds: 300),
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: SizeTransition(
+                            sizeFactor: animation,
+                            axis: Axis.vertical,
+                            child: child,
+                          ),
+                        ),
+                        child: _selectedIndex == 0
+                            ? _buildMesInformationsTab()
+                            : _buildMotDePasseTab(),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              child: _selectedIndex == 0 ? _buildMesInformationsTab() : _buildMotDePasseTab(),
-            ),
+    );
+  }
+
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+          const SizedBox(height: 16),
+          Text(
+            'Error Loading Profile',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _errorMessage ?? 'Unknown error occurred',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey[600],
+                ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _loadUserData,
+            child: const Text('Retry'),
           ),
         ],
       ),
@@ -84,25 +286,34 @@ class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateM
     return AppBar(
       backgroundColor: Color(0xFF3366CC),
       title: Text('Mon Profil',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+          style: TextStyle(
+              fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
       centerTitle: true,
       elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(bottom: Radius.circular(15))),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(15))),
     );
   }
 
   Drawer _buildDrawer() {
     return Drawer(
       width: MediaQuery.of(context).size.width * 0.75,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.horizontal(right: Radius.circular(20))),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.horizontal(right: Radius.circular(20))),
       child: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
           _buildDrawerHeader(),
-          _buildDrawerItem(icon: Icons.dashboard, title: 'Dashboard', onTap: () => _navigateTo(context, DashboardScreen())),
+          _buildDrawerItem(
+              icon: Icons.dashboard,
+              title: 'Dashboard',
+              onTap: () => _navigateTo(context, DashboardScreen())),
           Divider(height: 1, thickness: 0.5),
           _buildDrawerSectionTitle('SUIVRE TICKETS'),
-          _buildDrawerItem(icon: Icons.receipt, title: 'Mes Tickets', onTap: () => _navigateTo(context, MesTicketsPage())),
+          _buildDrawerItem(
+              icon: Icons.receipt,
+              title: 'Mes Tickets',
+              onTap: () => _navigateTo(context, MesTicketsPage())),
         ],
       ),
     );
@@ -111,7 +322,9 @@ class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateM
   Widget _buildDrawerHeader() {
     return Container(
       height: 150,
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(bottom: Radius.circular(15))),
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(15))),
       child: Center(
         child: Hero(
           tag: 'logo',
@@ -124,10 +337,14 @@ class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildDrawerItem({required IconData icon, required String title, required VoidCallback onTap}) {
+  Widget _buildDrawerItem(
+      {required IconData icon,
+      required String title,
+      required VoidCallback onTap}) {
     return ListTile(
       leading: Icon(icon, color: Colors.blueGrey),
-      title: Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+      title: Text(title,
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
       onTap: () {
         Navigator.pop(context);
         onTap();
@@ -139,7 +356,12 @@ class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateM
   Widget _buildDrawerSectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(title, style: TextStyle(fontSize: 12, color: Colors.blueGrey, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+      child: Text(title,
+          style: TextStyle(
+              fontSize: 12,
+              color: Colors.blueGrey,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2)),
     );
   }
 
@@ -150,7 +372,8 @@ class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateM
         transitionDuration: Duration(milliseconds: 500),
         pageBuilder: (_, __, ___) => page,
         transitionsBuilder: (_, animation, __, child) {
-          final tween = Tween(begin: 0.0, end: 1.0).chain(CurveTween(curve: Curves.easeInOut));
+          final tween = Tween(begin: 0.0, end: 1.0)
+              .chain(CurveTween(curve: Curves.easeInOut));
           return FadeTransition(opacity: animation.drive(tween), child: child);
         },
       ),
@@ -163,7 +386,9 @@ class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateM
       decoration: BoxDecoration(
         color: Color(0xFF3366CC),
         borderRadius: BorderRadius.vertical(bottom: Radius.circular(15)),
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 5))],
+        boxShadow: [
+          BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 5))
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -186,13 +411,20 @@ class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateM
         curve: Curves.easeInOut,
         padding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 20.0),
         decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: _selectedIndex == index ? Colors.white : Colors.transparent, width: 2.0)),
+          border: Border(
+              bottom: BorderSide(
+                  color: _selectedIndex == index
+                      ? Colors.white
+                      : Colors.transparent,
+                  width: 2.0)),
         ),
         child: Text(title,
             style: TextStyle(
                 color: Colors.white,
                 fontSize: 16,
-                fontWeight: _selectedIndex == index ? FontWeight.bold : FontWeight.normal)),
+                fontWeight: _selectedIndex == index
+                    ? FontWeight.bold
+                    : FontWeight.normal)),
       ),
     );
   }
@@ -208,21 +440,66 @@ class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateM
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildSectionTitle('Informations utilisateur'),
-              SizedBox(height: 15),
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 15),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error, color: Colors.red),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (_successMessage != null) ...[
+                const SizedBox(height: 15),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle, color: Colors.green),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _successMessage!,
+                          style: const TextStyle(color: Colors.green),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 15),
               _buildDoubleTextField(
                 firstController: _usernameController,
                 firstLabel: 'Username*',
                 secondController: _emailController,
                 secondLabel: 'Email address*',
               ),
-              SizedBox(height: 20),
+              const SizedBox(height: 20),
               _buildTextField(_firstNameController, 'Nom Prénom*'),
-              SizedBox(height: 30),
+              const SizedBox(height: 30),
               _buildSectionTitle('Contact'),
-              SizedBox(height: 15),
-              _buildTextField(_phoneController, 'Numéro de Téléphone*', keyboardType: TextInputType.phone),
-              SizedBox(height: 40),
-              _buildSaveButton('Modifier information'),
+              const SizedBox(height: 15),
+              _buildTextField(_phoneController, 'Numéro de Téléphone*',
+                  keyboardType: TextInputType.phone),
+              const SizedBox(height: 40),
+              _buildSaveButton('Modifier information', _updateProfile),
             ],
           ),
         ),
@@ -241,14 +518,61 @@ class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateM
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildSectionTitle('Changer votre mot de passe'),
-              SizedBox(height: 20),
-              _buildPasswordField('Ancien Mot de Passe*'),
-              SizedBox(height: 20),
-              _buildPasswordField('Nouveau Mot de Passe*'),
-              SizedBox(height: 20),
-              _buildPasswordField('Confirmer Mot de Passe*'),
-              SizedBox(height: 40),
-              _buildSaveButton('Changer Mot de Passe'),
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 15),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error, color: Colors.red),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (_successMessage != null) ...[
+                const SizedBox(height: 15),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle, color: Colors.green),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _successMessage!,
+                          style: const TextStyle(color: Colors.green),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 20),
+              _buildPasswordField(
+                  'Ancien Mot de Passe*', _oldPasswordController),
+              const SizedBox(height: 20),
+              _buildPasswordField(
+                  'Nouveau Mot de Passe*', _newPasswordController),
+              const SizedBox(height: 20),
+              _buildPasswordField(
+                  'Confirmer Mot de Passe*', _confirmPasswordController),
+              const SizedBox(height: 40),
+              _buildSaveButton('Changer Mot de Passe', _changePassword),
             ],
           ),
         ),
@@ -257,7 +581,11 @@ class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateM
   }
 
   Widget _buildSectionTitle(String title) {
-    return Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]));
+    return Text(title,
+        style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.blueGrey[800]));
   }
 
   Widget _buildDoubleTextField({
@@ -285,9 +613,11 @@ class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateM
         labelStyle: TextStyle(color: Colors.blueGrey),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
         enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.blueGrey.shade200)),
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Colors.blueGrey.shade200)),
         focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Color(0xFF3366CC), width: 2)),
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Color(0xFF3366CC), width: 2)),
         filled: true,
         fillColor: Colors.grey[50],
         contentPadding: EdgeInsets.symmetric(horizontal: 15, vertical: 18),
@@ -296,17 +626,20 @@ class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildPasswordField(String label) {
+  Widget _buildPasswordField(String label, TextEditingController controller) {
     return TextField(
+      controller: controller,
       obscureText: true,
       decoration: InputDecoration(
         labelText: label,
         labelStyle: TextStyle(color: Colors.blueGrey),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
         enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.blueGrey.shade200)),
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Colors.blueGrey.shade200)),
         focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Color(0xFF3366CC), width: 2)),
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Color(0xFF3366CC), width: 2)),
         filled: true,
         fillColor: Colors.grey[50],
         contentPadding: EdgeInsets.symmetric(horizontal: 15, vertical: 18),
@@ -316,40 +649,36 @@ class _ProfilPageState extends State<ProfilPage> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildSaveButton(String text) {
+  Widget _buildSaveButton(String text, VoidCallback? onPressed) {
     return Align(
       alignment: Alignment.bottomRight,
       child: ElevatedButton(
-        onPressed: _showSuccessSnackbar,
+        onPressed: _isSaving ? null : onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: Color(0xFF3366CC),
           foregroundColor: Colors.white,
           padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           elevation: 5,
           shadowColor: Colors.blueGrey.withOpacity(0.3),
         ),
-        child: AnimatedSwitcher(
-          duration: Duration(milliseconds: 300),
-          child: Text(text, key: ValueKey(text), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-        ),
-      ),
-    );
-  }
-
-  void _showSuccessSnackbar() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          _selectedIndex == 0 ? 'Informations mises à jour avec succès!' : 'Mot de passe changé avec succès!',
-          style: TextStyle(color: Colors.white),
-        ),
-        backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        margin: EdgeInsets.all(20),
-        duration: Duration(seconds: 2),
-        elevation: 6,
+        child: _isSaving
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : AnimatedSwitcher(
+                duration: Duration(milliseconds: 300),
+                child: Text(text,
+                    key: ValueKey(text),
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+              ),
       ),
     );
   }

@@ -4,6 +4,7 @@ import 'frontend/login/login-screen.dart';
 import 'frontend/login/dashboard_screen.dart';
 import 'frontend/login/mestickets.dart'; // Assure-toi que ce fichier existe
 import 'frontend/login/profil.dart';
+import 'frontend/login/password_reset_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -34,6 +35,7 @@ class MyApp extends StatelessWidget {
         '/dashboard': (context) => const DashboardScreen(),
         '/mes_tickets': (context) => const MesTicketsPage(),
         '/profile': (context) => ProfilPage(),
+        '/password_reset': (context) => const PasswordResetScreen(),
       },
     );
   }

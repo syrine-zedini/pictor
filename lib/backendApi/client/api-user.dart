@@ -115,6 +115,35 @@ class ApiService {
     }
   }
 
+  // Mobile password reset - new endpoint for mobile apps
+  // Sends email with code if email exists, returns false if email doesn't exist
+  static Future<bool> mobilePasswordReset(String email, String code) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/existmailmobil'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email,
+          'code': code,
+        }),
+      ).timeout(const Duration(seconds: timeoutSeconds));
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body); // Returns true if email exists and code sent, false otherwise
+      } else {
+        throw HttpException('Failed to process mobile password reset: ${response.statusCode}');
+      }
+    } on SocketException {
+      throw const SocketException('No Internet connection');
+    } on TimeoutException {
+      throw TimeoutException('Request timeout');
+    } on FormatException {
+      throw const FormatException('Invalid response format');
+    } catch (e) {
+      throw Exception('Mobile password reset error: $e');
+    }
+  }
+
   // Valider token
   // tokenData should be a Map corresponding to Validate TokenQuery (JSON)
   static Future<bool> validateToken(Map<String, dynamic> tokenData) async {

@@ -6,20 +6,23 @@ import 'usermodel.dart';
 import 'ticketmodel.dart';
 
 class Apiservice {
-  static const String _baseUrl = 'http://41.230.35.111:3030'; // Base URL pour tous les endpoints
+  static const String _baseUrl =
+      'http://41.230.35.111:3030'; // Base URL pour tous les endpoints
   static const int timeoutSeconds = 30;
 //creer un ticket
-  static Future<Ticket> createTicket(CreateTicketCommand command,
-      String token) async {
+  static Future<Ticket> createTicket(
+      CreateTicketCommand command, String token) async {
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/api/tickets'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode(command.toJson()),
-      ).timeout(const Duration(seconds: timeoutSeconds));
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/tickets'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode(command.toJson()),
+          )
+          .timeout(const Duration(seconds: timeoutSeconds));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         return Ticket.fromJson(jsonDecode(response.body));
@@ -36,7 +39,6 @@ class Apiservice {
       throw Exception('Create ticket error: $e');
     }
   }
-
 
   // Récupérer un ticket par ID
   static Future<Ticket> getTicketById(String ticketId, String token) async {
@@ -67,17 +69,19 @@ class Apiservice {
   }
 
   // Mettre à jour ticket
-  static Future<Ticket> updateTicket(String ticketId,
-      UpdateTicketCommand command, String token) async {
+  static Future<Ticket> updateTicket(
+      String ticketId, UpdateTicketCommand command, String token) async {
     try {
-      final response = await http.put(
-        Uri.parse('$_baseUrl/api/tickets/$ticketId'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode(command.toJson()),
-      ).timeout(const Duration(seconds: timeoutSeconds));
+      final response = await http
+          .put(
+            Uri.parse('$_baseUrl/api/tickets/$ticketId'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode(command.toJson()),
+          )
+          .timeout(const Duration(seconds: timeoutSeconds));
 
       if (response.statusCode == 200) {
         return Ticket.fromJson(jsonDecode(response.body));
@@ -97,17 +101,19 @@ class Apiservice {
 
   // Ajouter commentaire
 
-  static Future<Map<String, dynamic>> addComment(AddCommentCommand command,
-      String token) async {
+  static Future<Map<String, dynamic>> addComment(
+      AddCommentCommand command, String token) async {
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/api/tickets/comment'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode(command.toJson()),
-      ).timeout(const Duration(seconds: timeoutSeconds));
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/tickets/comment'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode(command.toJson()),
+          )
+          .timeout(const Duration(seconds: timeoutSeconds));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         return jsonDecode(response
@@ -127,8 +133,8 @@ class Apiservice {
   }
 
   // Ajouter PJ ticket
-  static Future<Map<String, dynamic>> addTicketAttachment(String ticketId,
-      File attachmentFile, String token) async {
+  static Future<Map<String, dynamic>> addTicketAttachment(
+      String ticketId, File attachmentFile, String token) async {
     try {
       var request = http.MultipartRequest(
         'POST',
@@ -142,15 +148,15 @@ class Apiservice {
         attachmentFile.path,
       ));
 
-      var response = await request.send().timeout(
-          const Duration(seconds: timeoutSeconds));
+      var response =
+          await request.send().timeout(const Duration(seconds: timeoutSeconds));
       var responseBody = await response.stream.bytesToString();
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         return jsonDecode(responseBody);
       } else {
-        throw HttpException('Failed to add ticket attachment: ${response
-            .statusCode} - $responseBody');
+        throw HttpException(
+            'Failed to add ticket attachment: ${response.statusCode} - $responseBody');
       }
     } on SocketException {
       throw const SocketException('No Internet connection');
@@ -162,8 +168,8 @@ class Apiservice {
   }
 
   // Ajouter PJ commentaire
-  static Future<Map<String, dynamic>> addCommentAttachment(String commentId,
-      File attachmentFile, String token) async {
+  static Future<Map<String, dynamic>> addCommentAttachment(
+      String commentId, File attachmentFile, String token) async {
     try {
       var request = http.MultipartRequest(
         'POST',
@@ -177,15 +183,15 @@ class Apiservice {
         attachmentFile.path,
       ));
 
-      var response = await request.send().timeout(
-          const Duration(seconds: timeoutSeconds));
+      var response =
+          await request.send().timeout(const Duration(seconds: timeoutSeconds));
       var responseBody = await response.stream.bytesToString();
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         return jsonDecode(responseBody);
       } else {
-        throw HttpException('Failed to add comment attachment: ${response
-            .statusCode} - $responseBody');
+        throw HttpException(
+            'Failed to add comment attachment: ${response.statusCode} - $responseBody');
       }
     } on SocketException {
       throw const SocketException('No Internet connection');
@@ -197,8 +203,8 @@ class Apiservice {
   }
 
   // Fermer ticket
-  static Future<void> closeTicket(String ticketId, String userId,
-      String token) async {
+  static Future<void> closeTicket(
+      String ticketId, String userId, String token) async {
     try {
       final response = await http.put(
         Uri.parse('$_baseUrl/api/tickets/closeticket/$ticketId/$userId'),
@@ -221,8 +227,8 @@ class Apiservice {
   }
 
   // Réouvrir ticket
-  static Future<void> openTicket(String ticketId, String userId,
-      String token) async {
+  static Future<void> openTicket(
+      String ticketId, String userId, String token) async {
     try {
       final response = await http.put(
         Uri.parse('$_baseUrl/api/tickets/openticket/$ticketId/$userId'),
@@ -303,8 +309,8 @@ class Apiservice {
     }
   }
 
-  static Future<int> getOpenTicketsCountByUser(String userId,
-      String token) async {
+  static Future<int> getOpenTicketsCountByUser(
+      String userId, String token) async {
     try {
       final response = await http.get(
         Uri.parse('$_baseUrl/api/tickets/nbticketopenbyuser/$userId'),
@@ -323,8 +329,8 @@ class Apiservice {
     }
   }
 
-  static Future<int> getClosedTicketsCountByUser(String userId,
-      String token) async {
+  static Future<int> getClosedTicketsCountByUser(
+      String userId, String token) async {
     try {
       final response = await http.get(
         Uri.parse('$_baseUrl/api/tickets/nbticketclosebyuser/$userId'),
@@ -336,16 +342,15 @@ class Apiservice {
         return jsonDecode(response.body) as int;
       } else {
         throw HttpException(
-            'Failed to get closed tickets by user count: ${response
-                .statusCode}');
+            'Failed to get closed tickets by user count: ${response.statusCode}');
       }
     } catch (e) {
       throw Exception('Error getting closed tickets by user count: $e');
     }
   }
 
-  static Future<int> getInProgressTicketsCountByUser(String userId,
-      String token) async {
+  static Future<int> getInProgressTicketsCountByUser(
+      String userId, String token) async {
     try {
       final response = await http.get(
         Uri.parse('$_baseUrl/api/tickets/nbticketencoursbyuser/$userId'),
@@ -357,8 +362,7 @@ class Apiservice {
         return jsonDecode(response.body) as int;
       } else {
         throw HttpException(
-            'Failed to get in progress tickets by user count: ${response
-                .statusCode}');
+            'Failed to get in progress tickets by user count: ${response.statusCode}');
       }
     } catch (e) {
       throw Exception('Error getting in progress tickets by user count: $e');
@@ -367,8 +371,8 @@ class Apiservice {
 
   // lister des tickets spécifiques par user
 
-  static Future<List<Ticket>> listTicketsByUser(String userId,
-      String token) async {
+  static Future<List<Ticket>> listTicketsByUser(
+      String userId, String token) async {
     try {
       final response = await http.get(
         Uri.parse('$_baseUrl/api/tickets/$userId'),
@@ -393,6 +397,46 @@ class Apiservice {
       throw const FormatException('Invalid response format');
     } catch (e) {
       throw Exception('List tickets by user error: $e');
+    }
+  }
+
+  static Future<int> getTotalTicketsCount(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/api/tickets/count'),
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: timeoutSeconds));
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body)['total'] as int;
+      } else {
+        throw HttpException(
+            'Failed to get total tickets count: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error getting total tickets count: $e');
+    }
+  }
+
+  static Future<int> getPendingTicketsCount(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/api/tickets/pending/count'),
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: timeoutSeconds));
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body)['pending'] as int;
+      } else {
+        throw HttpException(
+            'Failed to get pending tickets count: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error getting pending tickets count: $e');
     }
   }
 }

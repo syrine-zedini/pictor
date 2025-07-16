@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../login/dashboard_screen.dart';
+import '../../backendApi/client/api-ticket.dart';
+import '../../backendApi/client/ticketmodel.dart';
 
 class MesTicketsPage extends StatefulWidget {
   const MesTicketsPage({Key? key}) : super(key: key);
@@ -9,23 +12,163 @@ class MesTicketsPage extends StatefulWidget {
 }
 
 class _MesTicketsPageState extends State<MesTicketsPage> {
-  int _rowsPerPage = 5; // For the "Items per page" dropdown
+  int _rowsPerPage = 5;
+  List<Ticket> _tickets = [];
+  bool _isLoading = true;
+  String? _errorMessage;
+  String? _currentUserId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTickets();
+  }
+
+  Future<void> _loadTickets() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token != null) {
+        // Load tickets from API
+        final tickets =
+            await Apiservice.listTicketsByUser(_currentUserId ?? '', token);
+        setState(() {
+          _tickets = tickets;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'No authentication token found';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Failed to load tickets: $e';
+      });
+    }
+  }
+
+  Future<void> _createNewTicket() async {
+    // Show dialog to create new ticket
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (context) => _CreateTicketDialog(),
+    );
+
+    if (result != null) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final token = prefs.getString('token');
+
+        if (token != null) {
+          final command = CreateTicketCommand(
+            sujet: result['subject']!,
+            description: result['description']!,
+            priority: result['priority']!,
+            demandeurId: _currentUserId ?? '',
+          );
+
+          await Apiservice.createTicket(command, token);
+
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Ticket created successfully!')),
+          );
+
+          // Reload tickets
+          _loadTickets();
+        }
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to create ticket: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _viewTicketDetails(Ticket ticket) async {
+    // Show ticket details dialog
+    showDialog(
+      context: context,
+      builder: (context) => _TicketDetailsDialog(ticket: ticket),
+    );
+  }
+
+  Future<void> _closeTicket(Ticket ticket) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token != null) {
+        await Apiservice.closeTicket(
+            ticket.ticketId, _currentUserId ?? '', token);
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ticket closed successfully!')),
+        );
+
+        // Reload tickets
+        _loadTickets();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to close ticket: $e')),
+      );
+    }
+  }
+
+  Color _getPriorityColor(String priority) {
+    switch (priority.toLowerCase()) {
+      case 'critical':
+        return Colors.red;
+      case 'high':
+        return Colors.orange;
+      case 'normal':
+        return Colors.blue;
+      case 'low':
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'open':
+        return Colors.green;
+      case 'inprogress':
+        return Colors.orange;
+      case 'closed':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        // You might want to hide the default app bar title or use a custom one
         centerTitle: false,
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black, // For icons and text
-        elevation: 0, // No shadow
+        foregroundColor: Colors.black,
+        elevation: 0,
       ),
-      drawer: _buildDrawer(context), // The left-hand navigation drawer
+      drawer: _buildDrawer(context),
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // This column is typically within the Scaffold body for the main content
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(20.0),
@@ -44,12 +187,45 @@ class _MesTicketsPageState extends State<MesTicketsPage> {
                   const SizedBox(height: 20),
                   _buildActionButtons(),
                   const SizedBox(height: 20),
-                  _buildTicketTable(),
+                  _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _errorMessage != null
+                          ? _buildErrorWidget()
+                          : _buildTicketTable(),
                   const SizedBox(height: 20),
                   _buildPaginationControls(),
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+          const SizedBox(height: 16),
+          Text(
+            'Error Loading Tickets',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _errorMessage ?? 'Unknown error occurred',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey[600],
+                ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _loadTickets,
+            child: const Text('Retry'),
           ),
         ],
       ),
@@ -88,7 +264,8 @@ class _MesTicketsPageState extends State<MesTicketsPage> {
             title: const Text('Dashboard'),
             onTap: () {
               Navigator.pop(context); // Close the drawer
-              Navigator.pushNamed(context, '/dashboard'); // Navigate to Dashboard page
+              Navigator.pushNamed(
+                  context, '/dashboard'); // Navigate to Dashboard page
             },
           ),
           const Padding(
@@ -154,31 +331,63 @@ class _MesTicketsPageState extends State<MesTicketsPage> {
   Widget _buildActionButtons() {
     return Row(
       children: [
-        _buildActionButton(Icons.refresh, Colors.blue),
+        _buildActionButton(Icons.refresh, Colors.blue, 'Refresh', _loadTickets),
         const SizedBox(width: 10),
-        _buildActionButton(Icons.add, Colors.green),
+        _buildActionButton(
+            Icons.add, Colors.green, 'Create Ticket', _createNewTicket),
         const SizedBox(width: 10),
-        _buildActionButton(Icons.visibility, Colors.orange),
+        _buildActionButton(Icons.visibility, Colors.orange, 'View Details', () {
+          if (_tickets.isNotEmpty) {
+            _viewTicketDetails(_tickets.first);
+          }
+        }),
         const SizedBox(width: 10),
-        _buildActionButton(Icons.delete, Colors.red),
+        _buildActionButton(Icons.close, Colors.red, 'Close Ticket', () {
+          if (_tickets.isNotEmpty) {
+            _closeTicket(_tickets.first);
+          }
+        }),
         const SizedBox(width: 10),
-        _buildActionButton(Icons.edit, Colors.purple),
+        _buildActionButton(Icons.edit, Colors.purple, 'Edit', () {
+          // TODO: Implement edit functionality
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Edit functionality coming soon!')),
+          );
+        }),
         const SizedBox(width: 10),
-        _buildActionButton(Icons.rocket_launch, Colors.teal),
+        _buildActionButton(Icons.rocket_launch, Colors.teal, 'Export', () {
+          // TODO: Implement export functionality
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Export functionality coming soon!')),
+          );
+        }),
         const SizedBox(width: 10),
-        _buildActionButton(Icons.folder, Colors.indigo),
+        _buildActionButton(Icons.folder, Colors.indigo, 'Archive', () {
+          // TODO: Implement archive functionality
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Archive functionality coming soon!')),
+          );
+        }),
       ],
     );
   }
 
-  Widget _buildActionButton(IconData icon, Color color) {
-    return Container(
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+  Widget _buildActionButton(
+      IconData icon, Color color, String tooltip, VoidCallback onPressed) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
         borderRadius: BorderRadius.circular(8),
+        child: Container(
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Icon(icon, color: color),
+        ),
       ),
-      padding: const EdgeInsets.all(12),
-      child: Icon(icon, color: color),
     );
   }
 
@@ -206,88 +415,187 @@ class _MesTicketsPageState extends State<MesTicketsPage> {
                 label: Text(''), // For the checkbox
               ),
               DataColumn(
-                label: Text('Num Ticket', style: TextStyle(fontWeight: FontWeight.bold)),
+                label: Text('Num Ticket',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
               ),
               DataColumn(
-                label: Text('Sujet', style: TextStyle(fontWeight: FontWeight.bold)),
+                label: Text('Sujet',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
               ),
               DataColumn(
-                label: Text('Priority', style: TextStyle(fontWeight: FontWeight.bold)),
+                label: Text('Priority',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
               ),
               DataColumn(
-                label: Text('Statut', style: TextStyle(fontWeight: FontWeight.bold)),
+                label: Text('Statut',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
               ),
               DataColumn(
-                label: Text('Client User', style: TextStyle(fontWeight: FontWeight.bold)),
+                label: Text('Client User',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
               ),
               DataColumn(
                 label: Text(''), // For the eye icon
               ),
             ],
-            rows: [
-              _buildTicketRow(
-                context: context,
-                numTicket: '#Ticket-1',
-                sujet: 'IT support',
-                priority: 'Critical',
-                priorityColor: Colors.red,
-                statut: 'Open',
-                clientUser: 'Client User',
-              ),
-              _buildTicketRow(
-                context: context,
-                numTicket: '#Ticket-9',
-                sujet: 'LAN Switch Port Malfunctioning',
-                priority: 'Low',
-                priorityColor: Colors.blue,
-                statut: 'InProgress',
-                clientUser: 'Client User',
-              ),
-              // Add more rows as needed
-            ],
+            rows: _tickets.map((ticket) {
+              return DataRow(
+                cells: [
+                  DataCell(Checkbox(value: false, onChanged: (bool? value) {})),
+                  DataCell(Text(ticket.ticketId)),
+                  DataCell(Text(ticket.sujet)),
+                  DataCell(
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color:
+                            _getPriorityColor(ticket.priority).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        ticket.priority,
+                        style: TextStyle(
+                            color: _getPriorityColor(ticket.priority),
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(ticket.statut).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        ticket.statut,
+                        style: TextStyle(
+                            color: _getStatusColor(ticket.statut),
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                  DataCell(Text(ticket.demandeurId)),
+                  DataCell(
+                    IconButton(
+                      icon: const Icon(Icons.remove_red_eye_outlined,
+                          color: Colors.blue),
+                      onPressed: () {
+                        _viewTicketDetails(ticket);
+                      },
+                    ),
+                  ),
+                ],
+              );
+            }).toList(),
           ),
         ],
       ),
     );
   }
 
-  DataRow _buildTicketRow({
-    required BuildContext context,
-    required String numTicket,
-    required String sujet,
-    required String priority,
-    required Color priorityColor,
-    required String statut,
-    required String clientUser,
-  }) {
-    return DataRow(
-      cells: [
-        DataCell(Checkbox(value: false, onChanged: (bool? value) {})),
-        DataCell(Text(numTicket)),
-        DataCell(Text(sujet)),
-        DataCell(
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: priorityColor.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(4),
+  Widget _CreateTicketDialog() {
+    final _formKey = GlobalKey<FormState>();
+    final _subjectController = TextEditingController();
+    final _descriptionController = TextEditingController();
+    final _priorityController = TextEditingController();
+
+    return AlertDialog(
+      title: const Text('Create New Ticket'),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              controller: _subjectController,
+              decoration: const InputDecoration(labelText: 'Subject'),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Subject cannot be empty';
+                }
+                return null;
+              },
             ),
-            child: Text(
-              priority,
-              style: TextStyle(color: priorityColor, fontWeight: FontWeight.bold),
+            TextFormField(
+              controller: _descriptionController,
+              decoration: const InputDecoration(labelText: 'Description'),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Description cannot be empty';
+                }
+                return null;
+              },
             ),
-          ),
+            TextFormField(
+              controller: _priorityController,
+              decoration: const InputDecoration(
+                  labelText: 'Priority (e.g., Critical, High, Normal, Low)'),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Priority cannot be empty';
+                }
+                return null;
+              },
+            ),
+          ],
         ),
-        DataCell(Text(statut)),
-        DataCell(Text(clientUser)),
-        DataCell(
-          IconButton(
-            icon: const Icon(Icons.remove_red_eye_outlined, color: Colors.blue),
-            onPressed: () {
-              // Handle view ticket action
-            },
-          ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
         ),
+        ElevatedButton(
+          onPressed: () {
+            if (_formKey.currentState!.validate()) {
+              Navigator.pop(context, {
+                'subject': _subjectController.text,
+                'description': _descriptionController.text,
+                'priority': _priorityController.text,
+              });
+            }
+          },
+          child: const Text('Create'),
+        ),
+      ],
+    );
+  }
+
+  Widget _TicketDetailsDialog({required Ticket ticket}) {
+    return AlertDialog(
+      title: Text('Ticket Details: ${ticket.ticketId}'),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Subject: ${ticket.sujet}'),
+            const SizedBox(height: 8),
+            Text('Description: ${ticket.description}'),
+            const SizedBox(height: 8),
+            Text('Priority: ${ticket.priority}'),
+            const SizedBox(height: 8),
+            Text('Status: ${ticket.statut}'),
+            const SizedBox(height: 8),
+            Text('Created By: ${ticket.demandeurId}'),
+            const SizedBox(height: 8),
+            Text('Created At: ${ticket.dateCreation}'),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+        if (ticket.statut.toLowerCase() == 'open')
+          ElevatedButton(
+            onPressed: () => _closeTicket(ticket),
+            child: const Text('Close Ticket'),
+          ),
       ],
     );
   }

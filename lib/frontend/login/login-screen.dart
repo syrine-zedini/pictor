@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:animate_do/animate_do.dart';
+import '../../backendApi/client/api-user.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,28 +21,50 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _errorMessage;
 
   Future<void> _signIn() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
     final enteredUsername = _usernameController.text.trim();
     final enteredPassword = _passwordController.text.trim();
 
-    if (enteredUsername == 'client' && enteredPassword == 'pictor123') {
-      setState(() {
-        _isLoading = true;
-        _errorMessage = null;
-      });
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('username', enteredUsername);
-      await prefs.setString('password', enteredPassword);
+    try {
+      // Use the actual API for authentication
+      final response = await ApiService.loginUser(enteredUsername, enteredPassword);
+      
+      if (response.containsKey('token')) {
+        // Store user credentials and token
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('username', enteredUsername);
+        await prefs.setString('password', enteredPassword);
+        await prefs.setString('token', response['token']);
+        
+        // Store user info if available
+        if (response.containsKey('user')) {
+          await prefs.setString('userInfo', response['user'].toString());
+        }
 
+        setState(() {
+          _isLoading = false;
+        });
+
+        if (!mounted) return;
+        Navigator.pushReplacementNamed(context, '/dashboard');
+      } else {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Invalid response from server';
+        });
+      }
+    } catch (e) {
       setState(() {
         _isLoading = false;
-      });
-
-      if (!mounted) return;
-      Navigator.pushReplacementNamed(context, '/dashboard');
-    } else {
-      setState(() {
-        _errorMessage = 'Invalid credentials';
+        _errorMessage = e.toString().replaceAll('Exception: ', '');
       });
     }
   }
@@ -179,6 +202,25 @@ class _LoginScreenState extends State<LoginScreen> {
                         : Text(
                       'Sign in',
                       style: GoogleFonts.poppins(fontSize: 18, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              FadeInUp(
+                delay: const Duration(milliseconds: 600),
+                child: Center(
+                  child: TextButton(
+                    onPressed: () {
+                      Navigator.pushNamed(context, '/password_reset');
+                    },
+                    child: Text(
+                      'Forgot Password?',
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        color: Theme.of(context).primaryColor,
+                        decoration: TextDecoration.underline,
+                      ),
                     ),
                   ),
                 ),

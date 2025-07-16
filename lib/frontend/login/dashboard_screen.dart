@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../login/profil.dart';
-
-
+import '../../backendApi/client/api-ticket.dart';
+import '../../backendApi/client/api-user.dart';
+import '../../backendApi/client/usermodel.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -11,7 +13,99 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  String _selectedItem = 'Dashboard'; // Élément sélectionné par défaut
+  String _selectedItem = 'Dashboard';
+  User? _currentUser;
+  bool _isLoading = true;
+  int _totalTickets = 0;
+  int _openTickets = 0;
+  int _closedTickets = 0;
+  int _pendingTickets = 0;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+    _loadTicketStatistics();
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      final userInfo = prefs.getString('userInfo');
+
+      if (token != null && userInfo != null) {
+        // Parse user info from stored string
+        final userInfoMap = Map.fromEntries(userInfo
+            .replaceAll('{', '')
+            .replaceAll('}', '')
+            .split(',')
+            .map((e) {
+          final parts = e.trim().split(':');
+          if (parts.length == 2) {
+            return MapEntry(parts[0].trim(), parts[1].trim());
+          }
+          return MapEntry('', '');
+        }).where((e) => e.key.isNotEmpty));
+
+        setState(() {
+          _currentUser = User.fromJson(userInfoMap); // Utilisez userInfoMap ici
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to load user data: $e';
+      });
+    }
+  }
+
+  Future<void> _loadTicketStatistics() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token != null) {
+        // Load ticket counts from API
+        final totalTickets = await Apiservice.getTotalTicketsCount(token);
+        final openTickets = await Apiservice.getOpenTicketsCount(token);
+        final closedTickets = await Apiservice.getClosedTicketsCount(token);
+        final pendingTickets = await Apiservice.getPendingTicketsCount(token);
+
+        setState(() {
+          _totalTickets = totalTickets;
+          _openTickets = openTickets;
+          _closedTickets = closedTickets;
+          _pendingTickets = pendingTickets;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'No authentication token found';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Failed to load ticket statistics: $e';
+      });
+    }
+  }
+
+  Future<void> _logout() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear(); // Clear all stored data
+
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, '/login');
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Logout error: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,31 +118,72 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 _buildAppBar(),
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildBreadcrumbs(),
-                        const SizedBox(height: 24.0),
-
-                        const SizedBox(height: 16.0),
-                        _buildTicketOverviewCards(),
-                        const SizedBox(height: 32.0),
-                        Text(
-                          'Tickets - Vue d\'ensemble',
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 16.0),
-                        _buildTicketOverviewChart(),
-                      ],
-                    ),
-                  ),
+                  child: _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _errorMessage != null
+                          ? _buildErrorWidget()
+                          : SingleChildScrollView(
+                              padding: const EdgeInsets.all(24.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildBreadcrumbs(),
+                                  const SizedBox(height: 24.0),
+                                  const SizedBox(height: 16.0),
+                                  _buildTicketOverviewCards(),
+                                  const SizedBox(height: 32.0),
+                                  Text(
+                                    'Tickets - Vue d\'ensemble',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineSmall
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 16.0),
+                                  _buildTicketOverviewChart(),
+                                ],
+                              ),
+                            ),
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+          const SizedBox(height: 16),
+          Text(
+            'Error Loading Data',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _errorMessage ?? 'Unknown error occurred',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey[600],
+                ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                _isLoading = true;
+                _errorMessage = null;
+              });
+              _loadTicketStatistics();
+            },
+            child: const Text('Retry'),
           ),
         ],
       ),
@@ -68,7 +203,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Image.asset(
               'assets/images/pictor_logo.jpg',
               height: 80,
-              errorBuilder: (context, error, stackTrace) => const Icon(Icons.business),
+              errorBuilder: (context, error, stackTrace) =>
+                  const Icon(Icons.business),
             ),
           ),
           const SizedBox(height: 32.0),
@@ -77,9 +213,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Text(
               'NAVIGATION',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Colors.grey[600],
-                fontWeight: FontWeight.bold,
-              ),
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
           ),
           const SizedBox(height: 8.0),
@@ -90,9 +226,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Text(
               'SUIVRE TICKTES',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Colors.grey[600],
-                fontWeight: FontWeight.bold,
-              ),
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
           ),
           const SizedBox(height: 8.0),
@@ -149,20 +285,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           Row(
             children: [
-              const CircleAvatar(
-                backgroundImage: AssetImage('assets/images/profile_icon.jpg'),
+              CircleAvatar(
+                backgroundImage: _currentUser?.pathImg != null
+                    ? NetworkImage(_currentUser!.pathImg!) as ImageProvider
+                    : const AssetImage('assets/images/profile_icon.jpg'),
                 radius: 20,
               ),
               const SizedBox(width: 8.0),
               Text(
-                'Client',
+                _currentUser?.nomPrenom ?? 'Loading...',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(width: 8.0),
               PopupMenuButton<String>(
                 onSelected: (value) {
                   if (value == 'logout') {
-                    Navigator.pushReplacementNamed(context, '/login');
+                    _logout();
                   } else if (value == 'profile') {
                     Navigator.push(
                       context,
@@ -170,15 +308,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     );
                   }
                 },
-
                 itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                  const PopupMenuItem<String>(
+                  PopupMenuItem<String>(
                     value: 'profile',
                     child: Row(
                       children: [
-                        Icon(Icons.person),
-                        SizedBox(width: 8),
-                        Text('Mon Profile'),
+                        const Icon(Icons.person),
+                        const SizedBox(width: 8),
+                        Text(
+                            'Mon Profile (${_currentUser?.userName ?? 'User'})'),
                       ],
                     ),
                   ),
@@ -222,10 +360,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       mainAxisSpacing: 24.0,
       physics: const NeverScrollableScrollPhysics(),
       children: [
-        _buildTicketCard(Icons.grid_on, 'All Tickets', 2, Colors.blue),
-        _buildTicketCard(Icons.hourglass_empty, 'Tickets en cours de traitement', 1, Colors.orange),
-        _buildTicketCard(Icons.check_circle_outline, 'Tickets ouverts', 1, Colors.green),
-        _buildTicketCard(Icons.cancel_outlined, 'Tickets fermés', 0, Colors.red),
+        _buildTicketCard(
+            Icons.grid_on, 'All Tickets', _totalTickets, Colors.blue),
+        _buildTicketCard(Icons.hourglass_empty,
+            'Tickets en cours de traitement', _pendingTickets, Colors.orange),
+        _buildTicketCard(Icons.check_circle_outline, 'Tickets ouverts',
+            _openTickets, Colors.green),
+        _buildTicketCard(Icons.cancel_outlined, 'Tickets fermés',
+            _closedTickets, Colors.red),
       ],
     );
   }
@@ -249,9 +391,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Text(
               count.toString(),
               style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
             ),
           ],
         ),
@@ -268,7 +410,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-
             const SizedBox(height: 16.0),
             Center(
               child: SizedBox(
